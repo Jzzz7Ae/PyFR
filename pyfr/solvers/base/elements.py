@@ -3,9 +3,9 @@ from functools import cached_property, wraps
 import numpy as np
 
 from pyfr.nputil import fuzzysort, npeval
+from pyfr.cache import memoize
 from pyfr.quadrules import get_quadrule
 from pyfr.shapes import proj_l2
-from pyfr.util import memoize
 
 
 def inters_map(meth):
