@@ -90,8 +90,8 @@ class PointLocator:
         nodes = self.mesh.raw['nodes'][start:end]['location']
 
         # Insert these points into a spatial index
-        props = Property(dimension=self.mesh.ndims, interleaved=True)
-        idx = Index((np.arange(len(nodes)), nodes, nodes), properties=props)
+        idx = Index((np.arange(len(nodes)), nodes, nodes),
+                    properties=Property(dimension=self.mesh.ndims))
 
         # Query the index to find our closest node
         nearest = idx.nearest_v(pts, pts, 1, strict=True)[0]
