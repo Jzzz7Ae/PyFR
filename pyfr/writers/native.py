@@ -1,4 +1,5 @@
 import contextlib
+import ctypes
 import errno
 import fcntl
 import os
@@ -13,9 +14,10 @@ from pytools.prefork import call_capture_output
 import numpy as np
 
 from pyfr._version import __version__
-from pyfr.shapes import BaseShape
+from pyfr.ctypesutil import get_libc_function
 from pyfr.mpiutil import Gatherer, get_comm_rank_root, mpi, scal_coll
 from pyfr.quadrules import get_quadrule
+from pyfr.shapes import BaseShape
 from pyfr.util import file_path_gen, mv, subclass_where
 
 
@@ -26,6 +28,7 @@ class NativeWriter:
     LL_IOC_LOV_SETSTRIPE = 0x4008669a
     LOV_USER_MAGIC_V1 = 0x0bd10bd0
     LOV_USER_MAGIC_V3 = 0x0bd30bd0
+    MAGIC_LUSTRE = 0x0bd00bd0
     O_LOV_DELAY_CREATE = 0x1002100
 
     def __init__(self, mesh, cfg, fpdtype, basedir, basename, prefix, *,
@@ -55,7 +58,7 @@ class NativeWriter:
 
         self.tname = comm.bcast(tname, root=root)
 
-        # If we are on a Lusture filesystem
+        # If we are on a Lustre filesystem
         self.on_lustre_fs = self._on_lustre_fs(basedir)
 
         # Current asynchronous writing operation (if any)
@@ -67,19 +70,12 @@ class NativeWriter:
                             basedir, basename, prefix=prefix,
                             isrestart=intg.isrestart)
 
-    @staticmethod
-    def _on_lustre_fs(basedir):
+    @classmethod
+    def _on_lustre_fs(cls, basedir):
         if sys.platform == 'linux' and 'PYFR_DISABLE_LUSTRE' not in os.environ:
-            comm, rank, root = get_comm_rank_root()
-
-            if rank == root:
-                cmd = ['df', '--output=fstype', basedir]
-                stdout = call_capture_output(cmd)[1]
-                is_lusture = stdout.decode().splitlines()[1] == 'lustre'
-            else:
-                is_lusture = None
-
-            return comm.bcast(is_lusture, root=root)
+            buf = (ctypes.c_int * 128)()
+            get_libc_function('statfs')(basedir.encode(), buf)
+            return buf[0] == cls.MAGIC_LUSTRE
         else:
             return False
 
@@ -122,7 +118,7 @@ class NativeWriter:
             except (IOError, OSError):
                 pass
 
-        with h5py.File(path, 'w') as f:
+        with h5py.File(path, 'w', libver='latest') as f:
             yield f
 
     def _open_file(self, path):
