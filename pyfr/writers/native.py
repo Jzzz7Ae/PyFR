@@ -124,7 +124,7 @@ class NativeWriter:
     def _open_file(self, path):
         f = open(path, 'r+b')
 
-        # If we are on a Lusture file system then take a group lock
+        # If we are on a Lustre file system then take a group lock
         if self.on_lustre_fs:
             fcntl.ioctl(f.fileno(), self.LL_IOC_GROUP_LOCK, self.LL_GROUP)
 
