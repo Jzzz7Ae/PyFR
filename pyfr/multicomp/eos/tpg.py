@@ -1,8 +1,36 @@
 from pyfr.multicomp.eos.base import BaseEOS
 import itertools as it
-from collections import deque
 import numpy as np
-from scipy.optimize import minimize
+
+def evaluate_polynomial(x, coefficients):
+    x = np.asarray(x, dtype=float)
+    result = np.zeros_like(x, dtype=float)
+
+    for i, coef in enumerate(coefficients):
+        result += coef * (x ** i)
+
+    return result
+
+def fit_adaptive_monotonic_polynomial(x, y, tolerance=0.01):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    for degree in [0,1,2,3,4]:
+        # Fit unconstrained
+        poly = np.polynomial.Polynomial.fit(x, y, degree)
+        coeffs = list(poly.convert().coef)
+
+        # Evaluate polynomial
+        y_fit = evaluate_polynomial(x, coeffs)
+
+        # Calculate L∞ norm (maximum absolute error)
+        abs_error = np.max(np.abs(y_fit - y))
+        rel_error = abs_error / np.max(np.abs(y)) if np.max(np.abs(y)) > 1e-12 else abs_error
+
+        if rel_error < tolerance:
+            return coeffs
+
+    return coeffs
 
 
 class tpgEOS(BaseEOS):
@@ -25,16 +53,16 @@ class tpgEOS(BaseEOS):
             # Restructure NASA7 data for cleaner access
             N7 = props['NASA7']
             ns = consts['ns']
-            
+
             # Separate temperature cutoffs and coefficient arrays
             consts['T_cutoff'] = N7[:, 0]  # Temperature cutoff for each species
-            
+
             # High temperature range coefficients (columns 1-7)
             consts['NASA7_Thigh'] = []
             for n in range(ns):
                 coeffs = N7[n, 1:8].tolist()  # Convert to list for easier access
                 consts['NASA7_Thigh'].append(coeffs)
-            
+
             # Low temperature range coefficients (columns 8-14)
             consts['NASA7_Tlow'] = []
             for n in range(ns):
@@ -49,78 +77,56 @@ class tpgEOS(BaseEOS):
 
             # Store fitted coefficients as list of lists for cleaner access
             consts['fast_coeff'] = []
-            
+
             for n in range(ns):
-                # Determine which temperature range to use
-                m = np.where(Ts <= N7[n, 0], 8, 1)
-
-                w = np.ones(500)
-
                 # Fit cp
-                cp = (       N7[n, m + 0]
+                m = np.where(Ts <= N7[n, 0], 8, 1)
+                cp_ref = (       N7[n, m + 0]
                        + Ts*(N7[n, m + 1]
                        + Ts*(N7[n, m + 2]
                        + Ts*(N7[n, m + 3]
                        + Ts*(N7[n, m + 4] )))))
 
-                cp_poly = np.polynomial.Polynomial.fit(Ts, cp, 4, w=w)
-                coeffs = list(cp_poly.convert().coef)
+                # Adaptive monotonic polynomial fitting
+                coeffs = fit_adaptive_monotonic_polynomial(Ts, cp_ref)
 
                 # import matplotlib.pyplot as plt
-                # plt.plot(Ts, cp, label="ref")
-                # cp_new = (   coeffs[0]
-                #        + Ts*(coeffs[1]
-                #        + Ts*(coeffs[2]
-                #        + Ts*(coeffs[3]
-                #        + Ts*(coeffs[4] )))))
+                # plt.plot(Ts, cp_ref, label="ref")
+                # cp_new = evaluate_polynomial(Ts, coeffs)
                 # plt.plot(Ts, cp_new, '--', label="new")
                 # plt.title(f'c_p {consts['names'][n]}')
                 # plt.legend()
                 # plt.show()
 
-                h  = (  Ts*(N7[n, m + 0]
-                      + Ts*(N7[n, m + 1] / 2.0
-                      + Ts*(N7[n, m + 2] / 3.0
-                      + Ts*(N7[n, m + 3] / 4.0
-                      + Ts*(N7[n, m + 4] / 5.0))))) + N7[n, m + 5])
-                h_new  = (  Ts*(coeffs[0]
-                          + Ts*(coeffs[1] / 2.0
-                          + Ts*(coeffs[2] / 3.0
-                          + Ts*(coeffs[3] / 4.0
-                          + Ts*(coeffs[4] / 5.0))))))
+                h_ref  = (  Ts*(N7[n, m + 0]
+                          + Ts*(N7[n, m + 1] / 2.0
+                          + Ts*(N7[n, m + 2] / 3.0
+                          + Ts*(N7[n, m + 3] / 4.0
+                          + Ts*(N7[n, m + 4] / 5.0))))) + N7[n, m + 5])
 
-                # Use smallest h as integration constant
-                hmin = np.argmin(np.abs(h))
-                a5 = h[hmin] - h_new[hmin]
+                # Enthalpy from monotonic polynomial (integrated analytically)
+                h_new = np.zeros_like(Ts)
+                for i,coef in enumerate(coeffs):
+                    h_new += coef * Ts**(i+1) / (i+1)
+
+                # Find integration constant to match reference enthalpy
+                a5 = np.mean(h_ref - h_new)
                 coeffs.append(a5)
 
-                # plt.plot(Ts, h, label="ref")
-                # plt.plot(Ts, h_new + a5, "--", label="new")
-                # plt.title(f'Enthalpy {consts['names'][n]}')
-                # plt.legend()
-                # plt.show()
-
                 # entropy integration constant
-                s = (  np.log(Ts)*N7[n, m + 0]
-                            +(Ts *(N7[n, m + 1]
-                            + Ts *(N7[n, m + 2] / 2.0
-                            + Ts *(N7[n, m + 3] / 3.0
-                            + Ts *(N7[n, m + 4] / 4.0))))) + N7[n, m + 6])
+                s_ref = (  np.log(Ts)*N7[n, m + 0]
+                                +(Ts *(N7[n, m + 1]
+                                + Ts *(N7[n, m + 2] / 2.0
+                                + Ts *(N7[n, m + 3] / 3.0
+                                + Ts *(N7[n, m + 4] / 4.0))))) + N7[n, m + 6])
 
-                s_new = (  np.log(Ts)*coeffs[0]
-                               + (Ts*(coeffs[1]
-                               +  Ts*(coeffs[2] / 2.0
-                               +  Ts*(coeffs[3] / 3.0
-                               +  Ts*(coeffs[4] / 4.0))))))
-                smin = np.argmin(np.abs(s))
-                a6 = s[smin] - s_new[smin]
+                # Entropy from monotonic polynomial
+                s_new = coeffs[0] * np.log(Ts)
+                for i in range(1, len(coeffs)-1):
+                    s_new += coeffs[i] * Ts**i / i
+                # Find integration constant to match reference entropy
+                a6 = np.mean(s_ref - s_new)
                 coeffs.append(a6)
-
-                # plt.plot(Ts, s, label="ref")
-                # plt.plot(Ts, s_new + a6, "--", label="new")
-                # plt.title(f'Entropy {consts['names'][n]}')
-                # plt.legend()
-                # plt.show()
 
                 # Store coefficients for this species
                 consts['fast_coeff'].append(coeffs)
@@ -168,7 +174,7 @@ class tpgEOS(BaseEOS):
                     coeffs = consts['NASA7_Tlow'][n]
                 else:
                     coeffs = consts['NASA7_Thigh'][n]
-                
+
                 # NASA polynomial enthalpy calculation
                 h_species = (  T*(coeffs[0]
                       + T*(coeffs[1] / 2.0
@@ -228,14 +234,14 @@ class tpgEOS(BaseEOS):
                 if 'fast_coeff' in consts:
                     # Fast mode: use fitted coefficients
                     coeffs = consts['fast_coeff'][n]
-                    
+
                     # C_p polynomial: c0 + c1*T + c2*T^2 + c3*T^3 + c4*T^4
                     cp_species = 0.0
                     for i in range(len(coeffs) - 2):  # Exclude integration constants
                         cp_species += coeffs[i] * T**i
                     cp_species *= Ru / MW[n]
                     cp += cp_species * Y
-                    
+
                     # Enthalpy polynomial: integrated C_p
                     h_species = 0.0
                     for i in range(len(coeffs) - 2):
@@ -249,7 +255,7 @@ class tpgEOS(BaseEOS):
                         coeffs = consts['NASA7_Tlow'][n]
                     else:
                         coeffs = consts['NASA7_Thigh'][n]
-                    
+
                     # C_p calculation
                     cp_species = (     coeffs[0]
                            + T*(coeffs[1]
@@ -258,7 +264,7 @@ class tpgEOS(BaseEOS):
                            + T*(coeffs[4] )))))
                     cp_species *= Ru / MW[n]
                     cp += cp_species * Y
-                    
+
                     # Enthalpy calculation
                     h_species = (  T*(coeffs[0]
                           + T*(coeffs[1] /2.0
@@ -318,25 +324,25 @@ class tpgEOS(BaseEOS):
         cp = 0.0
         for n, (Y, diff_Y) in enumerate(zip(Yk, diff_Yk)):
             Rmix += Y / MW[n]
-            
+
             if 'fast_coeff' in consts:
                 # Fast mode: use fitted coefficients
                 coeffs = consts['fast_coeff'][n]
-                
+
                 # C_p polynomial
                 cp_species = 0.0
                 for i in range(len(coeffs) - 2):
                     cp_species += coeffs[i] * T**i
                 cp_species *= Ru / MW[n]
                 cp += cp_species * Y
-                
+
                 # Enthalpy calculation for energy balance
                 hk = 0.0
                 for i in range(len(coeffs) - 2):
                     hk += coeffs[i] * T**(i+1) / (i+1)
                 hk += coeffs[-2]  # Add enthalpy integration constant
                 hk *= Ru / MW[n]
-                
+
                 e_Y = hk - T*Ru/MW[n]
                 diff_T -= e_Y*diff_Y
             else:
@@ -345,7 +351,7 @@ class tpgEOS(BaseEOS):
                     coeffs = consts['NASA7_Tlow'][n]
                 else:
                     coeffs = consts['NASA7_Thigh'][n]
-                
+
                 # C_p calculation
                 cp_species = (     coeffs[0]
                        + T*(coeffs[1]
@@ -354,7 +360,7 @@ class tpgEOS(BaseEOS):
                        + T*(coeffs[4] )))))
                 cp_species *= Ru / MW[n]
                 cp += cp_species * Y
-                
+
                 # Enthalpy calculation
                 hk = (  T*(coeffs[0]
                       + T*(coeffs[1] /2.0
@@ -363,7 +369,7 @@ class tpgEOS(BaseEOS):
                       + T*(coeffs[4] /5.0)))))
                       +    coeffs[5])
                 hk *= Ru / MW[n]
-                
+
                 e_Y = hk - T*Ru/MW[n]
                 diff_T -= e_Y*diff_Y
 
