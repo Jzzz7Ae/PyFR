@@ -30,6 +30,9 @@ class BaseSystem:
         convars = self.elementscls.convars(mesh.ndims, cfg)
         privars = self.elementscls.privars(mesh.ndims, cfg)
 
+        self._nstep_counter = 0
+        self._ef_nsteps = cfg.getint('solver-entropy-filter', 'nsteps', 1)
+
         # Validate the constants block
         for c in cfg.items('constants'):
             if c in convars or c in privars:
@@ -64,6 +67,12 @@ class BaseSystem:
 
         if hasattr(eles[0], 'entmin_int'):
             self.eles_entmin_int = [e.entmin_int for e in eles]
+
+        if hasattr(eles[0], 'zeta'):
+            self.eles_zeta = [e.zeta for e in eles]
+
+        if hasattr(eles[0], 'sensor'):
+            self.eles_sensor = [e.sensor for e in eles]
 
         # Load the interfaces
         self._int_inters = self._load_int_inters(mesh, elemap)
@@ -256,23 +265,44 @@ class BaseSystem:
     def _rhs_graphs(self, uinbank, foutbank):
         pass
 
+    def _rhs_graphs_without_EF(self, uinbank, foutbank):
+        pass
+
     def rhs(self, t, uinbank, foutbank):
         self._rhs_uin_fout.add((uinbank, foutbank))
         self._prepare_kernels(t, uinbank, foutbank)
-
-        for graph in self._rhs_graphs(uinbank, foutbank):
-            self.backend.run_graph(graph)
+        
+        self._nstep_counter += 1
+        
+        if self._ef_nsteps <= 1 or self._nstep_counter % self._ef_nsteps == 0:
+            for graph in self._rhs_graphs(uinbank, foutbank):
+                self.backend.run_graph(graph)
+        else:
+            for graph in self._rhs_graphs_without_EF(uinbank, foutbank):
+                self.backend.run_graph(graph)        
 
     def _preproc_graphs(self, uinbank):
         pass
 
+    def _preproc_graphs_without_EF(self, uinbank):
+        pass
+
     def preproc(self, t, uinbank):
         self._prepare_kernels(t, uinbank, None)
-
-        for graph in self._preproc_graphs(uinbank):
-            self.backend.run_graph(graph)
+        
+        self._nstep_counter += 1
+        
+        if self._ef_nsteps <= 1 or self._nstep_counter % self._ef_nsteps == 0:
+            for graph in self._preproc_graphs(uinbank):
+                self.backend.run_graph(graph)
+        else:
+            for graph in self._preproc_graphs_without_EF(uinbank):
+                self.backend.run_graph(graph)
 
     def postproc(self, uinbank):
+        pass
+
+    def postproc_without_EF(self, uinbank):
         pass
 
     def rhs_wait_times(self):
@@ -308,6 +338,7 @@ class BaseSystem:
 
         self.backend.run_kernels(self._kernels[kkey])
 
+
     def evalsrcmacros(self, uinoutbank):
         kkey = ('eles/evalsrcmacros', uinoutbank, None)
 
@@ -318,6 +349,12 @@ class BaseSystem:
 
     def get_ele_entmin_int(self):
         return [e.get() for e in self.eles_entmin_int]
+
+    def get_ele_zeta(self):
+        return [e.get() for e in self.eles_zeta]
+
+    def get_ele_sensor(self):
+        return [e.get() for e in self.eles_sensor]
 
     def _group(self, g, kerns, subs=[]):
         # Eliminate non-existent kernels
@@ -332,3 +369,24 @@ class BaseSystem:
     def set_ele_entmin_int(self, entmin_int):
         for e, em in zip(self.eles_entmin_int, entmin_int):
             e.set(em)
+
+    def set_ele_zeta(self, zeta):
+        for e, em in zip(self.eles_zeta, zeta):
+            e.set(em)
+
+    def set_ele_sensor(self, sensor):
+        for e, em in zip(self.eles_sensor, sensor):
+            e.set(em)
+
+
+
+
+
+
+
+
+
+
+
+
+

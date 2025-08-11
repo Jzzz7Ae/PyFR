@@ -166,7 +166,7 @@ class BaseFluidElements:
             self.kernels['entropy_filter'] = lambda uin: self._be.kernel(
                 'entropyfilter', tplargs=eftplargs, dims=[self.neles],
                 u=self.scal_upts[uin], entmin_int=self.entmin_int,
-                vdm=self.vdm_ef, invvdm=self.invvdm, m0=self.m0
+                vdm=self.vdm_ef, invvdm=self.invvdm, m0=self.m0, sensor=self.sensor, zeta=self.zeta,
             )
 
 
@@ -228,3 +228,4 @@ class EulerElements(BaseFluidElements, BaseAdvectionElements):
             self.kernels['tdisf'] = lambda uin: slicedk(k(uin) for k in tdisf)
         else:
             self.kernels['tdisf'] = lambda: slicedk(k() for k in tdisf)
+

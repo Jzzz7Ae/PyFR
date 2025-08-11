@@ -11,3 +11,4 @@ class EulerSystem(BaseAdvectionSystem):
     intinterscls = EulerIntInters
     mpiinterscls = EulerMPIInters
     bbcinterscls = EulerBaseBCInters
+

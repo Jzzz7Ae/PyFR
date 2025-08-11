@@ -1,1 +1,0 @@
-from pyfr.solvers.mcnavstokes.system import MCNavierStokesSystem

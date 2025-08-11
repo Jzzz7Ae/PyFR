@@ -158,6 +158,12 @@ class BaseAdvectionElements(BaseElements):
                                               tags=tags, extent=ext,
                                               initval=entmin_int)
 
+            self.jump_int = self._be.matrix((self.nfpts, 5, self.neles),
+                                            tags=tags, extent=nonce + 'jump')
+            self.sensor = self._be.matrix((2, self.neles),
+                                             tags=tags, extent=nonce + 'mass')
+            self.zeta = self._be.matrix((1, self.neles),
+                                             tags=tags, extent=nonce + 'zeta')
             # Setup nodal/modal operator matrices
             form = self.cfg.get('solver-entropy-filter', 'formulation',
                                 'nonlinear')

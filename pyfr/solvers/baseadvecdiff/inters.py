@@ -15,7 +15,7 @@ class BaseAdvectionDiffusionIntInters(BaseAdvectionIntInters):
         self._comm_rhs = self._scal_view(rhs, 'get_comm_fpts_for_inter')
 
         # Generate the additional view matrices for artificial viscosity
-        if cfg.get('solver', 'shock-capturing') == 'artificial-viscosity':
+        if cfg.get('solver', 'shock-capturing') in ('artificial-viscosity', 'entropy-sensor-artificial-viscosity'):
             self._artvisc_lhs = self._view(lhs, 'get_artvisc_fpts_for_inter')
             self._artvisc_rhs = self._view(rhs, 'get_artvisc_fpts_for_inter')
         else:
@@ -86,7 +86,7 @@ class BaseAdvectionDiffusionMPIInters(BaseAdvectionMPIInters):
             )
 
         # Generate the additional kernels/views for artificial viscosity
-        if cfg.get('solver', 'shock-capturing') == 'artificial-viscosity':
+        if cfg.get('solver', 'shock-capturing') in ('artificial-viscosity', 'entropy-sensor-artificial-viscosity'):
             self._artvisc_lhs = self._xchg_view(lhs,
                                                 'get_artvisc_fpts_for_inter')
             self._artvisc_rhs = be.xchg_matrix_for_view(self._artvisc_lhs)
@@ -129,7 +129,7 @@ class BaseAdvectionDiffusionBCInters(BaseAdvectionBCInters):
         self.c |= cfg.items_as('solver-interfaces', float)
 
         # Generate the additional view matrices for artificial viscosity
-        if cfg.get('solver', 'shock-capturing') == 'artificial-viscosity':
+        if cfg.get('solver', 'shock-capturing') in ('artificial-viscosity', 'entropy-sensor-artificial-viscosity'):
             self._artvisc_lhs = self._view(lhs, 'get_artvisc_fpts_for_inter')
         else:
             self._artvisc_lhs = None

@@ -89,7 +89,9 @@
               entmin_int='inout fpdtype_t[${str(nfaces)}]'
               vdm='in broadcast fpdtype_t[${str(nefpts)}][${str(nupts)}]'
               invvdm='in broadcast fpdtype_t[${str(nupts)}][${str(nupts)}]'
-              m0='in broadcast fpdtype_t[${str(nfpts)}][${str(nupts)}]'>
+              m0='in broadcast fpdtype_t[${str(nfpts)}][${str(nupts)}]'
+              sensor='in fpdtype_t[2]'
+              zeta='inout fpdtype_t'>
     fpdtype_t dmin, pmin, emin;
 
     // Compute minimum entropy from current and adjacent elements
@@ -102,8 +104,17 @@
     // Filter if out of bounds
     if (dmin < ${d_min} || pmin < ${p_min} || emin < entmin - ${e_tol})
     {
+        if (dmin < ${d_min})
+        {
+             printf("Density violation: dmin = %e, threshold = %e\n", dmin, ${d_min});
+        }
+        if (pmin < ${p_min})
+        {
+             printf("Pressure violation: pmin = %e, threshold = %e\n", pmin, ${p_min});
+        }
         % if linearise:
         // Compute mean quantities
+
         fpdtype_t uavg[${nvars}], davg, pavg, eavg;
         % for vidx in range(nvars):
         uavg[${vidx}] = ${' + '.join(f'{jx}*u[{j}][{vidx}]'
@@ -184,6 +195,7 @@
                 // Set current minimum f as the bounds-preserving value
                 f = f_low;
             }
+            zeta = -log(fmax(f,1.0e-12));
         }
 
         // Filter full solution with bounds-preserving f value
@@ -191,6 +203,8 @@
 
         // Calculate minimum entropy from filtered solution
         ${pyfr.expand('get_minima', 'u', 'm0', 'dmin', 'pmin', 'emin')};
+    }else{
+        zeta = 0.0;
         % endif
     }
 

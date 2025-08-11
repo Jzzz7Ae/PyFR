@@ -48,6 +48,7 @@ class TavgPlugin(PostactionMixin, RegionMixin, TavgMixin, BaseSolnPlugin):
 
         # Primitive variables
         self.privars = first(intg.system.ele_map.values()).privars
+        self.privars.append('zeta')
 
         # Averaging mode
         self.mode = self.cfg.get(cfgsect, 'mode', 'windowed')
@@ -63,7 +64,7 @@ class TavgPlugin(PostactionMixin, RegionMixin, TavgMixin, BaseSolnPlugin):
         nfields = self._prepare_exprs()
 
         # Output data type
-        fpdtype = self.cfg.get(cfgsect, 'precision', 'single')
+        fpdtype = self.cfg.get('backend', 'precision', 'single')
         if fpdtype == 'single':
             self.fpdtype = np.float32
         elif fpdtype == 'double':
@@ -181,6 +182,9 @@ class TavgPlugin(PostactionMixin, RegionMixin, TavgMixin, BaseSolnPlugin):
 
             # Convert from conservative to primitive variables
             psolns = self.elementscls.con_to_pri(soln, self.cfg)
+            # Repeat zeta within an element so there is a value for every solution point
+            zeta_repeated = np.tile(intg.system.get_ele_zeta()[0], (psolns[0].shape[0],1))
+            psolns.append(zeta_repeated)
 
             # Prepare the substitutions dictionary
             subs = dict(zip(self.privars, psolns))
@@ -651,3 +655,4 @@ class TavgCLIPlugin(TavgMixin, BaseCLIPlugin):
 
         avg_time = sum(te - ts for ts, te in self.merged_range)
         self.files = [(*fcs, dt / avg_time) for *fcs, dt in files]
+
